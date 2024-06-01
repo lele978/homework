@@ -1,0 +1,194 @@
+#!/bin/bash
+
+TASKS_FILE="tasks.txt"
+
+create_task() {
+    if [ ! -e "$TASKS_FILE" ]; then
+        touch "$TASKS_FILE"
+        echo "tasks file created"
+    fi
+
+    while true; do
+        echo "Enter the title of the task: "
+        read -r title
+        if [ -z "$title" ]; then
+            echo "Error: Title cannot be empty. Please enter a title." >&2
+        else
+            break
+        fi
+    done
+
+    while true; do
+        echo "Enter the due date of the task (YYYY-MM-DD): "
+        read -r due_date
+        if [ -z "$due_date" ]; then
+            echo "Error: Due Date cannot be empty. Please enter a due date." >&2
+        elif ! [[ "$due_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || ! date -d "$due_date" >/dev/null 2>&1; then
+            echo "Error: Invalid date format. Please enter the date in YYYY-MM-DD format." >&2
+        else
+            break
+        fi
+    done
+
+    echo "Enter the description of the task: "
+    read -r description
+
+    echo "Enter the location of the task: "
+    read -r location
+
+    echo "Is the task completed? (yes/no): "
+    read -r completion
+    if [ "$completion" == "yes" ]; then
+        completion="completed"
+    else
+        completion="uncompleted"
+    fi
+
+    if [ -s "$TASKS_FILE" ]; then
+        task_id=$(tail -n 1 "$TASKS_FILE" | awk '{print $1 + 1}')
+    else
+        task_id=1
+    fi
+
+    echo "$task_id    $title    $description    $location    $due_date    $completion" >> "$TASKS_FILE"
+    echo "Task added successfully."
+}
+
+update_task() {
+    echo "Enter the ID of the task you want to update: "
+    read -r task_id
+
+    echo "What do you want to update? (1. Title, 2. Description, 3. Location, 4. Due Date, 5. Completion)"
+    read -r choice
+
+    echo "Enter the new value: "
+    read -r new_value
+
+    awk -v task_id="$task_id" -v choice="$choice" -v new_value="$new_value" 'BEGIN {FS=OFS="    "} $1 == task_id {
+        if (choice == 1) $2 = new_value;
+        else if (choice == 2) $3 = new_value;
+        else if (choice == 3) $4 = new_value;
+        else if (choice == 4) $5 = new_value;
+        else if (choice == 5) $6 = new_value;
+    } 1' "$TASKS_FILE" > temp && mv temp "$TASKS_FILE"
+    echo "Task updated successfully."
+}
+
+delete_task() {
+    echo "Enter the ID of the task you want to delete: "
+    read -r task_id
+
+    awk -v task_id="$task_id" 'BEGIN {FS=OFS="    "} $1 != task_id {print $0}' "$TASKS_FILE" > temp && mv temp "$TASKS_FILE"
+    echo "Task deleted successfully."
+}
+
+task_info() {
+    echo "Enter the ID of the task you want to view: "
+    read -r task_id
+
+    awk -v task_id="$task_id" -F '    ' 'BEGIN {found=0}
+        $1 == task_id {
+            print "Task ID: " $1
+            print "Title: " $2
+            print "Description: " $3
+            print "Location: " $4
+            print "Due Date: " $5
+            print "Completion: " $6
+            found=1
+            exit
+        }
+        END {
+            if(found==0){
+                print "Task with ID " task_id " not found"
+            }
+        }
+    ' "$TASKS_FILE"
+}
+
+list_tasks() {
+    echo "Enter the date (YYYY-MM-DD) to list tasks for:"
+    read -r input_date
+
+    if ! [[ "$input_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+        echo "Invalid date format. Please enter the date in YYYY-MM-DD format." >&2
+        return
+    fi
+
+    completed_tasks=$(awk -v date="$input_date" 'BEGIN {FS=OFS="    "} {if($5 == date && $6 == "completed") print $0}' "$TASKS_FILE")
+    uncompleted_tasks=$(awk -v date="$input_date" 'BEGIN {FS=OFS="    "} {if($5 == date && $6 != "completed") print $0}' "$TASKS_FILE")
+
+    if [ -n "$completed_tasks" ]; then
+        echo "Completed tasks for $input_date:"
+        echo "$completed_tasks"
+    else
+        echo "No completed tasks for $input_date."
+    fi
+
+    if [ -n "$uncompleted_tasks" ]; then
+        echo "Uncompleted tasks for $input_date:"
+        echo "$uncompleted_tasks"
+    else
+        echo "No uncompleted tasks for $input_date."
+    fi
+}
+
+search_task_by_title() {
+    echo "Enter the title of the task you want to search for:"
+    read -r search_title
+
+    matching_tasks=$(awk -v title="$search_title" 'BEGIN {FS=OFS="    "} {if($2 == title) print $0}' "$TASKS_FILE")
+
+    if [ -n "$matching_tasks" ]; then
+        echo "Tasks with title '$search_title':"
+        echo "$matching_tasks"
+    else
+        echo "No tasks found with title '$search_title'."
+    fi
+}
+
+show_help() {
+    echo "Usage: $0 <command>"
+    echo "Commands:"
+    echo "  create      Create a new task"
+    echo "  update      Update an existing task"
+    echo "  delete      Delete a task"
+    echo "  info        Show information of a task"
+    echo "  list        List tasks of a given day in two sections: completed and uncompleted"
+    echo "  search      Search a task by its title"
+}
+
+if [ "$1" = "--help" ]; then
+    show_help
+    exit 0
+fi
+
+if [ $# -eq 0 ]; then
+    current_date=$(date +'%Y-%m-%d')
+    list_tasks "$current_date"
+    exit 0
+fi
+
+case "$1" in
+    create)
+        create_task
+        ;;
+    update)
+        update_task
+        ;;
+    delete)
+        delete_task
+        ;;
+    info)
+        task_info
+        ;;
+    list)
+        list_tasks
+        ;;
+    search)
+        search_task_by_title
+        ;;
+    *)
+        echo "Error: Unknown command '$1'. Use --help for usage."
+        exit 1
+        ;;
+esac
